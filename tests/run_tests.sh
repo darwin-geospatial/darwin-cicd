@@ -28,6 +28,20 @@ for test_script in "$SCRIPT_DIR"/test_*.py; do
     echo ""
 done
 
+for test_script in "$SCRIPT_DIR"/test_*.sh; do
+    [ -f "$test_script" ] || continue
+    name="$(basename "$test_script")"
+    echo "--- $name ---"
+    if bash "$test_script" "$CICD_ROOT"; then
+        echo "PASS: $name"
+        PASS=$((PASS + 1))
+    else
+        echo "FAIL: $name"
+        FAIL=$((FAIL + 1))
+    fi
+    echo ""
+done
+
 echo "==============================="
 echo "Results: $PASS passed, $FAIL failed"
 echo "==============================="

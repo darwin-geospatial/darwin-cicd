@@ -132,6 +132,59 @@ vm_setup_cleanup_trap() {
 }
 
 # ========================================
+# vm_resolve_egress_bypass
+# ========================================
+# Resolve the conscious cross-region egress bypass flag from its placeholder.
+# Mirrors the VM_ON_FAILURE pattern: a per-VM vm_config_{idx}.env may set
+# ALLOW_CROSS_REGION_EGRESS=true to consciously disable the region guard.
+# Defaults to "false" (guard enforced) when the placeholder is left unreplaced.
+# Usage: vm_resolve_egress_bypass
+vm_resolve_egress_bypass() {
+  export ALLOW_CROSS_REGION_EGRESS="${ALLOW_CROSS_REGION_EGRESS:-__ALLOW_CROSS_REGION_EGRESS__}"
+  [[ "$ALLOW_CROSS_REGION_EGRESS" == "__ALLOW_CROSS_REGION_EGRESS__" ]] && ALLOW_CROSS_REGION_EGRESS="false"
+  export ALLOW_CROSS_REGION_EGRESS
+}
+
+# ========================================
+# vm_assert_region_bucket_match
+# ========================================
+# HARD region egress guard for the VM. Validates every given gs:// path / bucket
+# against the VM's own region (derived from VM_ZONE). On an unbypassed mismatch
+# the VM is powered off IMMEDIATELY — before any data transfer can occur.
+# The ONLY way past it is to consciously set ALLOW_CROSS_REGION_EGRESS=true.
+# Usage: vm_assert_region_bucket_match gs://bucket/path [gs://other ...]
+vm_assert_region_bucket_match() {
+  [ $# -eq 0 ] && return 0
+
+  # Fail closed if the guard module was not bundled — never silently allow egress.
+  if ! command -v region_guard_check >/dev/null 2>&1; then
+    echo "[region-guard] FATAL: region_guard.sh not loaded; cannot verify bucket regions." >&2
+    echo "[region-guard] Powering off VM to prevent unverified cross-region egress." >&2
+    sync || true
+    sudo shutdown -h now "region-egress-guard: guard module missing" 2>/dev/null \
+      || sudo poweroff -f 2>/dev/null || true
+    exit 1
+  fi
+
+  vm_resolve_egress_bypass
+
+  local vm_region
+  vm_region="$(region_guard_region_from_zone "${VM_ZONE:-__VM_ZONE__}")"
+
+  if region_guard_check "$vm_region" "$@"; then
+    return 0
+  fi
+
+  echo ""
+  echo "[region-guard] Powering off VM NOW to prevent cross-region egress."
+  sync || true
+  sudo shutdown -h now "region-egress-guard: bucket/VM region mismatch" 2>/dev/null \
+    || sudo poweroff -f 2>/dev/null || true
+  # Belt-and-suspenders: never fall through into a transfer.
+  exit 1
+}
+
+# ========================================
 # vm_install_docker
 # ========================================
 # Install Docker and enable the service
@@ -291,6 +344,12 @@ write_run_contract() {
   echo "=========================================="
   echo "Writing Run Contract"
   echo "=========================================="
+
+  # HARD region guard: the output bucket must live in the VM region too
+  # (uploads incur egress just like downloads). Runs before any processing.
+  if [[ "${OUTPUT_GCS}" == gs://* ]]; then
+    vm_assert_region_bucket_match "${OUTPUT_GCS}"
+  fi
 
   # Mandatory: inputs and expected_outputs must always be provided
   if [ -z "${INPUTS_JSON}" ] || [ "${INPUTS_JSON}" = "{}" ]; then
@@ -531,6 +590,9 @@ vm_standard_init() {
   [[ "$VM_ON_FAILURE" == "__VM_ON_FAILURE__" ]] && VM_ON_FAILURE="shutdown"
   [[ "$VM_DEBUG_TTL" == "__VM_DEBUG_TTL__" ]] && VM_DEBUG_TTL="4"
 
+  # Resolve the cross-region egress bypass flag (default: guard enforced).
+  vm_resolve_egress_bypass
+
   vm_startup_banner
   vm_export_metadata
   vm_setup_cleanup_trap
@@ -559,6 +621,9 @@ vm_download_features() {
   local FORMAT="$3"
   shift 3
   local YEARS_ARRAY=("$@")
+
+  # HARD region guard: refuse to download from a bucket outside the VM region.
+  vm_assert_region_bucket_match "$GCS_PATH"
 
   echo ""
   echo "Downloading features (${FORMAT^^} format)..."
@@ -617,6 +682,9 @@ vm_download_labels() {
   local LOCAL_DIR="$2"
   shift 2
   local YEARS_ARRAY=("$@")
+
+  # HARD region guard: refuse to download from a bucket outside the VM region.
+  vm_assert_region_bucket_match "$GCS_PATH"
 
   echo ""
   echo "Downloading labels (PT format)..."

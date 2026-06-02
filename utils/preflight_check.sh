@@ -47,6 +47,8 @@
 PREFLIGHT_MISSING_FILES=()
 PREFLIGHT_CHECKED_COUNT=0
 PREFLIGHT_START_TIME=""
+# Unique GCS buckets touched during preflight (for the region egress guard)
+PREFLIGHT_BUCKETS_SEEN=()
 
 # ========================================
 # Start preflight check
@@ -56,6 +58,7 @@ preflight_start() {
   PREFLIGHT_START_TIME=$(date +%s)
   PREFLIGHT_MISSING_FILES=()
   PREFLIGHT_CHECKED_COUNT=0
+  PREFLIGHT_BUCKETS_SEEN=()
 
   echo ""
   echo "=========================================="
@@ -75,6 +78,13 @@ preflight_check_file() {
   fi
 
   PREFLIGHT_CHECKED_COUNT=$((PREFLIGHT_CHECKED_COUNT + 1))
+
+  # Record the bucket for the region egress guard (see preflight_finalize).
+  if command -v region_guard_bucket_name >/dev/null 2>&1; then
+    local _PF_BUCKET
+    _PF_BUCKET="$(region_guard_bucket_name "$FILE")"
+    [ -n "$_PF_BUCKET" ] && PREFLIGHT_BUCKETS_SEEN+=("$_PF_BUCKET")
+  fi
 
   if ! gsutil -q stat "$FILE" 2>/dev/null; then
     PREFLIGHT_MISSING_FILES+=("$FILE")
@@ -172,6 +182,14 @@ preflight_check_with_delta() {
 # Finalize preflight check and exit if failures
 # ========================================
 preflight_finalize() {
+  # HARD region guard FIRST: if any input bucket is outside the VM region,
+  # stop immediately to prevent cross-region egress (powers off the VM unless
+  # ALLOW_CROSS_REGION_EGRESS=true). More fundamental than a missing file.
+  if command -v vm_assert_region_bucket_match >/dev/null 2>&1 \
+     && [ ${#PREFLIGHT_BUCKETS_SEEN[@]} -gt 0 ]; then
+    vm_assert_region_bucket_match "${PREFLIGHT_BUCKETS_SEEN[@]}"
+  fi
+
   local PREFLIGHT_END_TIME=$(date +%s)
   local PREFLIGHT_DURATION=$((PREFLIGHT_END_TIME - PREFLIGHT_START_TIME))
 

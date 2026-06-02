@@ -200,6 +200,7 @@ cicd/
 │   ├── create_multi_vms.sh        # Create 1..N VMs with zone fallback + logging links
 │   └── print_logging_link.sh      # Print Cloud Logging URL (call with bash)
 ├── utils/
+│   ├── region_guard.sh           # HARD region egress guard (concatenated into VM scripts)
 │   ├── preflight_check.sh         # GCS validation (concatenated into VM scripts)
 │   ├── startup_common.sh          # Docker auth + pull (concatenated into VM scripts)
 │   ├── run_contract.sh            # Shell entrypoint for run-contract CLI
@@ -229,3 +230,43 @@ CloudBuild YAML ──_REGION──> builder scripts use: ${_REGION:-${CB_REGION
 ```
 
 Every CloudBuild step that calls `cicd/` scripts must export `DEFAULTS_FILE` pointing to your project's `defaults.yaml`.
+
+## Region egress guard (hard rule)
+
+To eliminate cross-region GCS egress costs, a VM may **only** access buckets that
+live in the **same region** as the VM. A mismatch is fatal — the run is stopped
+**before any data transfer**.
+
+Enforced at two layers (`utils/region_guard.sh`):
+
+| Layer | Where | Action on mismatch |
+|-------|-------|--------------------|
+| Orchestration (fail-fast) | `create_multi_vms.sh`, before VM creation | Aborts the build — no VM is created |
+| On-VM (authoritative) | `vm_assert_region_bucket_match` — runs in `preflight_finalize`, `vm_download_features`, `vm_download_labels`, and `write_run_contract` (output bucket) | Powers the VM off **immediately** |
+
+A bucket's region is read live via `gcloud storage buckets describe`. **Matching is
+strict by default:** the only configuration GCP bills at $0 is a regional bucket whose
+location string equals the VM's region *exactly* (e.g. `europe-west1` == `europe-west1`).
+Everything else is a mismatch — including a different region on the same continent
+(`europe-west4` vs `europe-southwest1`) and any multi-region (`EU`) or dual-region
+(`EUR4`) bucket read from a single region (GCP bills those as same-continent egress).
+**Fail-closed:** a bucket whose location cannot be determined (e.g. missing
+`storage.buckets.get`) is also treated as a mismatch.
+
+> Opt-in: set `REGION_GUARD_ALLOW_SAME_CONTINENT=true` to additionally treat a
+> same-continent multi/dual-region bucket as free. Only enable this if you have
+> confirmed in your own billing that those reads are genuinely $0.
+
+### Conscious bypass (the only way past it)
+
+There is no implicit override. To accept the egress cost you must explicitly set:
+
+```
+# Per-VM, on the VM (vm_config_{idx}.env):
+ALLOW_CROSS_REGION_EGRESS=true
+
+# Build-level, at orchestration (CloudBuild substitution):
+_ALLOW_CROSS_REGION_EGRESS=true
+```
+
+When bypassed, the guard prints a loud billing warning and proceeds.

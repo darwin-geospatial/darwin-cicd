@@ -40,8 +40,10 @@ if [[ ! -f "$VM_SCRIPT_PATH" ]]; then
   exit 1
 fi
 
-# Concatenate preflight + common + pipeline script
-cat "${CICD_ROOT}/utils/preflight_check.sh" \
+# Concatenate region guard + preflight + common + pipeline script.
+# region_guard.sh first so its functions are defined before the others call them.
+cat "${CICD_ROOT}/utils/region_guard.sh" \
+    "${CICD_ROOT}/utils/preflight_check.sh" \
     "${CICD_ROOT}/utils/startup_common.sh" \
     > /tmp/startup-script.sh
 

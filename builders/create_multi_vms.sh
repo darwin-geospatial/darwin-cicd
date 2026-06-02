@@ -86,6 +86,31 @@ if [[ -n "${_REGION:-}" && ! "$_REGION" =~ ^europe- ]]; then
   exit 1
 fi
 
+# ----------------------------------------------------------------------
+# HARD region egress guard (orchestration-time fail-fast)
+# ----------------------------------------------------------------------
+# Refuse to even create a VM if the output bucket lives outside the target
+# region — cross-region access incurs GCS egress billing. The on-VM guard
+# (vm_assert_region_bucket_match) is the authoritative runtime backstop that
+# checks the VM's ACTUAL zone; this orchestration check just fails fast so we
+# don't pay for VM startup on an obvious mismatch.
+# Bypass ONLY by consciously setting _ALLOW_CROSS_REGION_EGRESS=true.
+source "${CICD_ROOT}/utils/region_guard.sh"
+export ALLOW_CROSS_REGION_EGRESS="${_ALLOW_CROSS_REGION_EGRESS:-false}"
+GUARD_REGION="${_REGION:-${CB_REGION:-}}"
+if [[ -z "$GUARD_REGION" ]]; then
+  GUARD_REGION="$(region_guard_region_from_zone "$(echo "${ZONES[0]}" | xargs)")"
+fi
+GUARD_BUCKET="${_BUCKET:-${CB_BUCKET:-}}"
+if [[ -n "$GUARD_BUCKET" ]]; then
+  echo ""
+  echo "Region egress guard (orchestration): region=${GUARD_REGION} bucket=${GUARD_BUCKET}"
+  if ! region_guard_check "$GUARD_REGION" "$GUARD_BUCKET"; then
+    echo "ERROR: Region egress guard blocked VM creation (bucket/region mismatch)." >&2
+    exit 1
+  fi
+fi
+
 # VM image settings
 GPU_IMAGE_FAMILY="${GPU_IMAGE_FAMILY:-pytorch-2-9-cu129-ubuntu-2204-nvidia-580}"
 GPU_IMAGE_PROJECT="${GPU_IMAGE_PROJECT:-deeplearning-platform-release}"
@@ -192,6 +217,12 @@ for IDX in $(seq 1 "$VM_COUNT"); do
     sed "s|__VM_ZONE__|$ZONE|g" "$STARTUP_FILE" > "/tmp/startup-script-${ZONE}.sh"
     ZONE_STARTUP="/tmp/startup-script-${ZONE}.sh"
 
+    # TODO(egress): the region guard only catches LOCATION mismatches. It cannot
+    # catch *same-region* egress caused by the network path — a VM reaching GCS over
+    # its external IP / public storage.googleapis.com instead of via Private Google
+    # Access is billed as internet egress even when the bucket is in the same region.
+    # Follow-up: create VMs with --no-address on a subnet that has Private Google
+    # Access enabled (and verify routing) so same-region reads stay internal/free.
     CREATE_CMD=(gcloud compute instances create "$VM_NAME"
       --zone="$ZONE"
       --machine-type="$_MACHINE_TYPE"
