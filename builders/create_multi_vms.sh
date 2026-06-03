@@ -105,9 +105,21 @@ fi
 # Bypass ONLY by consciously setting _ALLOW_CROSS_REGION_EGRESS=true.
 source "${CICD_ROOT}/utils/region_guard.sh"
 export ALLOW_CROSS_REGION_EGRESS="${_ALLOW_CROSS_REGION_EGRESS:-false}"
-GUARD_REGION="${_REGION:-${CB_REGION:-}}"
+# The VM's REAL region is the zone it is created in (ZONES[0], from
+# TRAINING_ZONES) — NOT _REGION. _REGION sets the Artifact Registry image
+# region, which can legitimately differ from the VM zone (e.g. the L4-GPU
+# pipelines run the VM in europe-west4 while pulling images from a
+# europe-west1 AR repo). Deriving the guard region from _REGION gave wrong
+# verdicts whenever _REGION != the VM zone:
+#   - false NEGATIVE: west4 VM + west1 bucket PASSED (because _REGION==west1)
+#       — the exact cross-region egress this guard exists to stop slipped past.
+#   - false POSITIVE: west4 VM + west4 bucket BLOCKED (because _REGION==west1)
+#       — a correctly co-located, zero-egress run was refused.
+# Always check the zone the VM actually runs in; fall back to _REGION/CB_REGION
+# only if the zone is somehow unavailable.
+GUARD_REGION="$(region_guard_region_from_zone "$(echo "${ZONES[0]}" | xargs)")"
 if [[ -z "$GUARD_REGION" ]]; then
-  GUARD_REGION="$(region_guard_region_from_zone "$(echo "${ZONES[0]}" | xargs)")"
+  GUARD_REGION="${_REGION:-${CB_REGION:-}}"
 fi
 GUARD_BUCKET="${_BUCKET:-${CB_BUCKET:-}}"
 if [[ -n "$GUARD_BUCKET" ]]; then
