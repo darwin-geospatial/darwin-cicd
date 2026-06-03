@@ -28,6 +28,10 @@
 # ========================================
 set -euo pipefail
 
+# Portable in-place sed: GNU accepts `-i`, BSD/macOS needs `-i ''`. Detect via
+# --version (GNU supports it, BSD errors) so this script runs in CloudBuild and locally.
+if sed --version >/dev/null 2>&1; then SED_INPLACE=(-i); else SED_INPLACE=(-i ''); fi
+
 CICD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "${CICD_ROOT}/config/load_defaults.sh"
 
@@ -52,8 +56,11 @@ RUN_CONTRACT_PY="${CICD_ROOT}/utils/run_contract.py"
 RUN_CONTRACT_SH="${CICD_ROOT}/utils/run_contract.sh"
 
 if [[ -f "$RUN_CONTRACT_PY" && -f "$RUN_CONTRACT_SH" ]]; then
-  PY_B64=$(base64 -w0 "$RUN_CONTRACT_PY" 2>/dev/null || base64 "$RUN_CONTRACT_PY")
-  SH_B64=$(base64 -w0 "$RUN_CONTRACT_SH" 2>/dev/null || base64 "$RUN_CONTRACT_SH")
+  # GNU base64 (CloudBuild) supports -w0 for single-line; BSD/macOS base64 does not
+  # and rejects a positional filename, so the local fallback reads stdin and strips
+  # newlines itself (keeps the embedded blob single-line on both platforms).
+  PY_B64=$(base64 -w0 "$RUN_CONTRACT_PY" 2>/dev/null || base64 < "$RUN_CONTRACT_PY" | tr -d '\n')
+  SH_B64=$(base64 -w0 "$RUN_CONTRACT_SH" 2>/dev/null || base64 < "$RUN_CONTRACT_SH" | tr -d '\n')
   cat >> /tmp/startup-script.sh << EMBED_EOF
 
 # ---- Auto-embedded run_contract CLI (extracted at VM boot) ----
@@ -81,18 +88,18 @@ REPOSITORY="${PROJECT_ID}-docker"
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${CODE_IMAGE_NAME}:${SHORT_SHA}"
 
 # Common sed replacements (shared across ALL pipelines)
-sed -i "s|__REGION__|${REGION}|g" /tmp/startup-script.sh
-sed -i "s|__IMAGE_URI__|${IMAGE_URI}|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__REGION__|${REGION}|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__IMAGE_URI__|${IMAGE_URI}|g" /tmp/startup-script.sh
 
 # Bucket (handles both __BUCKET__ and __OUTPUT_BUCKET__ placeholders)
-sed -i "s|__BUCKET__|${BUCKET}|g" /tmp/startup-script.sh
-sed -i "s|__OUTPUT_BUCKET__|${BUCKET}|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__BUCKET__|${BUCKET}|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__OUTPUT_BUCKET__|${BUCKET}|g" /tmp/startup-script.sh
 
 # VM metadata (identical across all pipelines)
-sed -i "s|__VM_NAME__|${VM_NAME}|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__VM_NAME__|${VM_NAME}|g" /tmp/startup-script.sh
 # __VM_ZONE__ is left as-is here; create_multi_vms.sh replaces it with the actual zone
-sed -i "s|__VM_ZONE__|__VM_ZONE__|g" /tmp/startup-script.sh
-sed -i "s|__BUILD_ID__|${BUILD_ID}|g" /tmp/startup-script.sh
-sed -i "s|__GIT_COMMIT__|${SHORT_SHA}|g" /tmp/startup-script.sh
-sed -i "s|__CLOUDBUILD_YAML__|${CLOUDBUILD_YAML}|g" /tmp/startup-script.sh
-sed -i "s|__PIPELINE_TITLE__|${PIPELINE_TITLE}|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__VM_ZONE__|__VM_ZONE__|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__BUILD_ID__|${BUILD_ID}|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__GIT_COMMIT__|${SHORT_SHA}|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__CLOUDBUILD_YAML__|${CLOUDBUILD_YAML}|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__PIPELINE_TITLE__|${PIPELINE_TITLE}|g" /tmp/startup-script.sh

@@ -31,12 +31,20 @@ set -euo pipefail
 #   MAX_RUN_DURATION
 # ========================================
 
+# Portable in-place sed: GNU accepts `-i`, BSD/macOS needs `-i ''`. Detect via
+# --version (GNU supports it, BSD errors) so this script runs in CloudBuild and locally.
+if sed --version >/dev/null 2>&1; then SED_INPLACE=(-i); else SED_INPLACE=(-i ''); fi
+
 CICD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Load defaults
 source "${CICD_ROOT}/config/load_defaults.sh"
 
-VM_COUNT_FILE="/workspace/vm_count.txt"
+# Workspace dir holding the vm_*.env/txt config files. Defaults to /workspace (the
+# CloudBuild mount) but is overridable so the orchestrator can run outside CloudBuild
+# (e.g. locally) — set WORKSPACE_DIR to any writable directory.
+WORKSPACE_DIR="${WORKSPACE_DIR:-/workspace}"
+VM_COUNT_FILE="${WORKSPACE_DIR}/vm_count.txt"
 if [[ ! -f "$VM_COUNT_FILE" ]]; then
   echo "ERROR: $VM_COUNT_FILE not found" >&2
   exit 1
@@ -122,8 +130,8 @@ ORIG_PIPELINE_TITLE="${PIPELINE_TITLE}"
 ALL_VM_NAMES=""
 
 for IDX in $(seq 1 "$VM_COUNT"); do
-  CONFIG_FILE="/workspace/vm_config_${IDX}.env"
-  LABELS_FILE="/workspace/vm_labels_${IDX}.txt"
+  CONFIG_FILE="${WORKSPACE_DIR}/vm_config_${IDX}.env"
+  LABELS_FILE="${WORKSPACE_DIR}/vm_labels_${IDX}.txt"
 
   if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "ERROR: Config file not found: $CONFIG_FILE" >&2
@@ -172,9 +180,9 @@ for IDX in $(seq 1 "$VM_COUNT"); do
     KEY="${LINE%%=*}"
     VALUE="${LINE#*=}"
     if [[ "$VALUE" == *"|"* ]]; then
-      sed -i "s#__${KEY}__#${VALUE}#g" "$STARTUP_FILE"
+      sed "${SED_INPLACE[@]}" "s#__${KEY}__#${VALUE}#g" "$STARTUP_FILE"
     else
-      sed -i "s|__${KEY}__|${VALUE}|g" "$STARTUP_FILE"
+      sed "${SED_INPLACE[@]}" "s|__${KEY}__|${VALUE}|g" "$STARTUP_FILE"
     fi
   done < "$CONFIG_FILE"
 
@@ -277,19 +285,19 @@ for IDX in $(seq 1 "$VM_COUNT"); do
     exit 1
   fi
 
-  echo "$ACTUAL_ZONE" > "/workspace/vm_zone_${IDX}.txt"
+  echo "$ACTUAL_ZONE" > "${WORKSPACE_DIR}/vm_zone_${IDX}.txt"
 
   # Capture creation timestamp for absolute time range in logging URLs
   VM_CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
   VM_LOGS_END=$(date -u -d "+7 days" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
     || date -u -v+7d +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
     || echo "")
-  echo "$VM_CREATED_AT" > "/workspace/vm_created_at_${IDX}.txt"
+  echo "$VM_CREATED_AT" > "${WORKSPACE_DIR}/vm_created_at_${IDX}.txt"
 
   # Get instance ID for Cloud Logging
   INSTANCE_ID=$(gcloud compute instances describe "$VM_NAME" --zone="$ACTUAL_ZONE" --format='get(id)' 2>/dev/null || echo "")
-  echo "$INSTANCE_ID" > "/workspace/vm_instance_id_${IDX}.txt"
-  echo "$VM_NAME" > "/workspace/vm_name_${IDX}.txt"
+  echo "$INSTANCE_ID" > "${WORKSPACE_DIR}/vm_instance_id_${IDX}.txt"
+  echo "$VM_NAME" > "${WORKSPACE_DIR}/vm_name_${IDX}.txt"
 
   echo "VM created in zone: $ACTUAL_ZONE"
 
@@ -312,7 +320,7 @@ for IDX in $(seq 1 "$VM_COUNT"); do
 done
 
 # Save all VM names
-echo "$ALL_VM_NAMES" > /workspace/vm_names.txt
+echo "$ALL_VM_NAMES" > "${WORKSPACE_DIR}/vm_names.txt"
 
 echo "=========================================="
 echo "All $VM_COUNT VM(s) created successfully"
