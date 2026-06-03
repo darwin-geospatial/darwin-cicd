@@ -85,10 +85,17 @@ chmod +x /tmp/startup-script.sh
 REGION="${_REGION:-${CB_REGION}}"
 BUCKET="${_BUCKET:-${CB_BUCKET}}"
 REPOSITORY="${PROJECT_ID}-docker"
-IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${CODE_IMAGE_NAME}:${SHORT_SHA}"
+# Image-registry region is INDEPENDENT of the compute region. The Artifact Registry
+# repo lives in the defaults region (CB_REGION); compute may run elsewhere — e.g.
+# co-located with data in another region. Defaulting IMAGE_REGION to _REGION (as before)
+# breaks the pull whenever compute is moved, since the repo only exists in CB_REGION.
+# Override with _IMAGE_REGION if the repo ever moves.
+IMAGE_REGION="${_IMAGE_REGION:-${CB_REGION}}"
+IMAGE_URI="${IMAGE_REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${CODE_IMAGE_NAME}:${SHORT_SHA}"
 
 # Common sed replacements (shared across ALL pipelines)
 sed "${SED_INPLACE[@]}" "s|__REGION__|${REGION}|g" /tmp/startup-script.sh
+sed "${SED_INPLACE[@]}" "s|__IMAGE_REGION__|${IMAGE_REGION}|g" /tmp/startup-script.sh
 sed "${SED_INPLACE[@]}" "s|__IMAGE_URI__|${IMAGE_URI}|g" /tmp/startup-script.sh
 
 # Bucket (handles both __BUCKET__ and __OUTPUT_BUCKET__ placeholders)
