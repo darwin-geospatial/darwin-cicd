@@ -335,7 +335,8 @@ run_contract_cli_path() {
 write_run_contract() {
   local CONTRACT_FILE="$1"
   local OUTPUT_GCS="$2"
-  local CONFIG_JSON="${3:-{}}"
+  local CONFIG_JSON="${3:-}"
+  [ -z "${CONFIG_JSON}" ] && CONFIG_JSON="{}"
   local INPUTS_JSON="${4:-}"
   local EXPECTED_OUTPUTS_JSON="${5:-}"
   local EXPECTED_INPUTS_JSON="${6:-[]}"
