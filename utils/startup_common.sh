@@ -475,9 +475,12 @@ update_run_contract() {
     --output-location "${OUTPUT_GCS}"
     --verification-json-file "${JSON_TMP}/verification.json"
   )
-  if [[ "${OUTPUT_GCS}" == gs://* ]]; then
-    CLI_ARGS+=(--upload-gcs-dir "${OUTPUT_GCS}")
-  fi
+  # NOTE: unlike init/preflight, `finalize` has no --upload-gcs-dir flag -- it
+  # already uploads the contract itself, driven by --output-location above
+  # (see run_contract.py _cmd_finalize's "Upload contracts to GCS" section).
+  # Passing --upload-gcs-dir here made every finalize call error with
+  # "unrecognized arguments" (found 2026-08-03, erosion_lightgbm training run
+  # ce10b8f3 -- the run's own failure-recording call was silently broken).
   if ! "${RUN_CONTRACT_CLI_PATH}" "${CLI_ARGS[@]}"; then
     echo "ERROR: run_contract.sh finalize failed." >&2
     return 1
