@@ -87,7 +87,12 @@ def _runtime_metadata() -> Dict[str, Any]:
         "runtime": kind,
         "project_id": os.getenv("PROJECT_ID"),
         "build_id": os.getenv("BUILD_ID"),
-        "commit_sha": os.getenv("SHORT_SHA") or os.getenv("COMMIT_SHA") or os.getenv("GIT_COMMIT"),
+        # Prefer a REAL commit hash; skip image-tag sentinels (SHORT_SHA is often "latest"/"local").
+        "commit_sha": next(
+            (v for v in (os.getenv("COMMIT_SHA"), os.getenv("GIT_COMMIT"), os.getenv("SHORT_SHA"))
+             if v and v not in ("latest", "local", "unknown", "__GIT_COMMIT__")),
+            None,
+        ),
         "vm_name": os.getenv("VM_NAME"),
         "vm_zone": os.getenv("VM_ZONE"),
         "cloudbuild_yaml": os.getenv("CLOUDBUILD_YAML"),

@@ -107,6 +107,9 @@ sed "${SED_INPLACE[@]}" "s|__VM_NAME__|${VM_NAME}|g" /tmp/startup-script.sh
 # __VM_ZONE__ is left as-is here; create_multi_vms.sh replaces it with the actual zone
 sed "${SED_INPLACE[@]}" "s|__VM_ZONE__|__VM_ZONE__|g" /tmp/startup-script.sh
 sed "${SED_INPLACE[@]}" "s|__BUILD_ID__|${BUILD_ID}|g" /tmp/startup-script.sh
-sed "${SED_INPLACE[@]}" "s|__GIT_COMMIT__|${SHORT_SHA}|g" /tmp/startup-script.sh
+# Provenance: fill with the REAL repo commit, not the image tag (SHORT_SHA is often "latest"/"local").
+# Fall back to SHORT_SHA only when git is unavailable, so behaviour is unchanged in that case.
+GIT_COMMIT="$(git rev-parse HEAD 2>/dev/null || echo "${SHORT_SHA}")"
+sed "${SED_INPLACE[@]}" "s|__GIT_COMMIT__|${GIT_COMMIT}|g" /tmp/startup-script.sh
 sed "${SED_INPLACE[@]}" "s|__CLOUDBUILD_YAML__|${CLOUDBUILD_YAML}|g" /tmp/startup-script.sh
 sed "${SED_INPLACE[@]}" "s|__PIPELINE_TITLE__|${PIPELINE_TITLE}|g" /tmp/startup-script.sh
