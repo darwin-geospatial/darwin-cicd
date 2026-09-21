@@ -14,6 +14,13 @@ Two axes: **Importance** (does it matter?) vs **Difficulty** (how much effort?).
 | **High Importance** | Q1 -- Do first (quick wins) | Q2 -- Plan carefully (big bets) |
 | **Low Importance** | Q3 -- Timebox or delegate | Q4 -- Drop |
 
+**Importance = how much it matters if this does not get done:**
+
+| Level | What it means |
+|-------|---------------|
+| High | Directly affects user or team outcomes, unblocks other work, or is required by a commitment or deadline |
+| Low | Nice to have; the work continues fine without it for the foreseeable future |
+
 **Size = effort/difficulty:**
 
 | Size | Hours | What it means |
