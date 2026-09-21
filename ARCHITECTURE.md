@@ -236,15 +236,3 @@ gs://.../Experiments/<MODEL_ID>/model_weights/      gs://.../Experiments/<MODEL_
 | Query | Used in | Purpose |
 |-------|---------|---------|
 | `{query}` | `{file}` | {purpose} |
-
----
-
-## 6. Staleness Log
-
-> On every push to main: checks whether pushed files are documented here.
-> 5% of sessions: checks all documented paths still exist.
-> Never delete a row without human confirmation.
-
-| Item | Status | Last checked | Notes |
-|------|--------|-------------|-------|
-| `{path or gs:// resource}` | {current / stale} | {YYYY-MM-DD} | {notes} |
