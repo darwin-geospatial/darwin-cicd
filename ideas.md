@@ -16,10 +16,13 @@ Two axes: **Importance** (does it matter?) vs **Difficulty** (how much effort?).
 
 **Importance = how much it matters if this does not get done:**
 
-| Level | What it means |
-|-------|---------------|
-| High | Directly affects user or team outcomes, unblocks other work, or is required by a commitment or deadline |
-| Low | Nice to have; the work continues fine without it for the foreseeable future |
+| Level | Short | What it means |
+|-------|-------|---------------|
+| High | H | Blocks progress, required by a deadline, or directly affects user/team outcomes |
+| Medium-High | MH | Significant impact; should be addressed soon but not immediately blocking |
+| Medium | M | Real value, neither urgent nor optional; do it when Q1/Q2 are clear |
+| Medium-Low | ML | Marginal benefit; fine to defer until higher-priority work is done |
+| Low | L | Nice to have; work continues fine without it for the foreseeable future |
 
 **Size = effort/difficulty:**
 
