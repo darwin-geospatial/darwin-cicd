@@ -1,0 +1,106 @@
+# IDEAS -- darwin-cicd
+
+> Prioritization, backlog, and idea management tool. Updated as ideas surface during sessions.
+> Agent: surface pending ideas and suggest commits every 15 prompts with quadrant + size + who.
+
+---
+
+## Methodology
+
+Two axes: **Importance** (does it matter?) vs **Difficulty** (how much effort?).
+
+| | Low Difficulty | High Difficulty |
+|---|---|---|
+| **High Importance** | Q1 -- Do first (quick wins) | Q2 -- Plan carefully (big bets) |
+| **Low Importance** | Q3 -- Timebox or delegate | Q4 -- Drop |
+
+**Importance = how much it matters if this does not get done:**
+
+| Level | Short | What it means |
+|-------|-------|---------------|
+| High | H | Blocks progress, required by a deadline, or directly affects user/team outcomes |
+| Medium-High | MH | Significant impact; should be addressed soon but not immediately blocking |
+| Medium | M | Real value, neither urgent nor optional; do it when Q1/Q2 are clear |
+| Medium-Low | ML | Marginal benefit; fine to defer until higher-priority work is done |
+| Low | L | Nice to have; work continues fine without it for the foreseeable future |
+
+**Size = effort/difficulty:**
+
+| Size | Hours | What it means |
+|------|-------|---------------|
+| XS | < 1h | Trivial change |
+| S | 1-4h | Half a day or less |
+| M | 1d (4-8h) | One focused day |
+| L | 3d (12-24h) | A few days of work |
+| XL | 1w+ (40h+) | Significant project |
+
+**Who:** git username of whoever had the idea. If multiple people, list all.
+
+**Area:** top-level domain this idea belongs to. Use the vocabulary defined in the Area / Sub-area vocabulary section below.
+
+**Sub-area:** more specific topic within the Area. Optional but recommended.
+
+---
+
+## Area / Sub-area vocabulary
+_Define the valid Area and Sub-area values for this repo. Keep it stable -- changes here should be deliberate, as they affect all existing entries._
+
+| Area | Sub-areas | Notes |
+|------|-----------|-------|
+| `repo` | `structure`, `docs`, `ci` | Repo-level work |
+| `data` | `ingestion`, `processing`, `storage` | Data pipeline work |
+| `agent` | `workflow`, `tools`, `prompts` | Agent and MCP work |
+| `infra` | `deploy`, `monitoring`, `security` | Infrastructure work |
+
+---
+
+## Q1 · High Importance + Low Difficulty
+_Quick wins -- do these first._
+
+| Idea | Importance | Who | Size | Area | Sub-area | Notes |
+|------|-----------|-----|------|------|----------|-------|
+| | | | | | | |
+
+## Q2 · High Importance + High Difficulty
+_Big bets -- plan carefully before starting._
+
+| Idea | Importance | Who | Size | Area | Sub-area | Notes |
+|------|-----------|-----|------|------|----------|-------|
+| | | | | | | |
+
+## Q3 · Low Importance + Low Difficulty
+_Timebox or delegate -- only if Q1 and Q2 are clear._
+
+| Idea | Importance | Who | Size | Area | Sub-area | Notes |
+|------|-----------|-----|------|------|----------|-------|
+| | | | | | | |
+
+## Q4 · Low Importance + High Difficulty
+_Drop -- not worth it at this stage._
+
+| Idea | Importance | Who | Size | Area | Sub-area | Notes |
+|------|-----------|-----|------|------|----------|-------|
+| | | | | | | |
+
+---
+
+## Alternative Options
+_Different approaches worth considering for current or planned work. Not committed -- just options on the table._
+
+| Option | For what decision | Who | Area | Sub-area | Notes |
+|--------|------------------|-----|------|----------|-------|
+| | | | | | |
+
+## Backlog
+_Future must-haves -- will happen eventually, not yet scheduled. These are commitments, not maybes._
+
+| Item | Importance | Who | Size | Area | Sub-area | Notes |
+|------|-----------|-----|------|------|----------|-------|
+| | | | | | | |
+
+## Ideas
+_Worth exploring -- no commitment, no urgency. Discard freely._
+
+| Idea | Importance | Who | Size | Area | Sub-area | Notes |
+|------|-----------|-----|------|------|----------|-------|
+| | | | | | | |
