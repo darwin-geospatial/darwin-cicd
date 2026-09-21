@@ -38,29 +38,29 @@ Two axes: **Importance** (does it matter?) vs **Difficulty** (how much effort?).
 ## Q1 · High Importance + Low Difficulty
 _Quick wins -- do these first._
 
-| Idea | Who | Size | Notes |
-|------|-----|------|-------|
+| Idea | Importance | Who | Size | Area / Sub-area | Notes |
+|------|-----------|-----|------|-----------------|-------|
 | | | | |
 
 ## Q2 · High Importance + High Difficulty
 _Big bets -- plan carefully before starting._
 
-| Idea | Who | Size | Notes |
-|------|-----|------|-------|
+| Idea | Importance | Who | Size | Area / Sub-area | Notes |
+|------|-----------|-----|------|-----------------|-------|
 | | | | |
 
 ## Q3 · Low Importance + Low Difficulty
 _Timebox or delegate -- only if Q1 and Q2 are clear._
 
-| Idea | Who | Size | Notes |
-|------|-----|------|-------|
+| Idea | Importance | Who | Size | Area / Sub-area | Notes |
+|------|-----------|-----|------|-----------------|-------|
 | | | | |
 
 ## Q4 · Low Importance + High Difficulty
 _Drop -- not worth it at this stage._
 
-| Idea | Who | Size | Notes |
-|------|-----|------|-------|
+| Idea | Importance | Who | Size | Area / Sub-area | Notes |
+|------|-----------|-----|------|-----------------|-------|
 | | | | |
 
 ---
@@ -68,20 +68,20 @@ _Drop -- not worth it at this stage._
 ## Alternative Options
 _Different approaches worth considering for current or planned work. Not committed -- just options on the table._
 
-| Option | For what decision | Who | Notes |
-|--------|------------------|-----|-------|
+| Option | For what decision | Who | Area / Sub-area | Notes |
+|--------|------------------|-----|-----------------|-------|
 | | | | |
 
 ## Backlog
 _Future must-haves -- will happen eventually, not yet scheduled. These are commitments, not maybes._
 
-| Item | Who | Size | Notes |
-|------|-----|------|-------|
+| Item | Importance | Who | Size | Area / Sub-area | Notes |
+|------|-----------|-----|------|-----------------|-------|
 | | | | |
 
 ## Ideas
 _Worth exploring -- no commitment, no urgency. Discard freely._
 
-| Idea | Who | Size | Notes |
-|------|-----|------|-------|
+| Idea | Importance | Who | Size | Area / Sub-area | Notes |
+|------|-----------|-----|------|-----------------|-------|
 | | | | |
