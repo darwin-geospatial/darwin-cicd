@@ -1,0 +1,7 @@
+id,label,description
+grant,Grant,Funding call: grant or co-funding programme
+prize,Prize,Competition or challenge with a cash prize
+recognition,Recognition,Award or visibility programme without cash
+partnership,Partnership,Institutional channel that unlocks other opportunities
+compute,Compute,HPC allocation or cloud / GPU credit programme
+venue,Venue,"Conference, journal or session to submit to"
