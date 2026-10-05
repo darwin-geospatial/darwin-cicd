@@ -24,8 +24,9 @@
 #   __GIT_COMMIT__, __REGION__, __IMAGE_URI__, __PIPELINE_TITLE__
 #
 # Optional (via vm_config_{idx}.env):
-#   __VM_ON_FAILURE__  — shutdown (default) | keep-alive
-#   __VM_DEBUG_TTL__   — Hours to keep VM alive on failure (default: 4)
+#   __VM_ON_FAILURE__  — shutdown (default) | keep-alive  (hold VM on failure)
+#   __VM_ON_COMPLETE__ — shutdown (default) | keep-alive  (hold VM on success = debug mode)
+#   __VM_DEBUG_TTL__   — Hours to keep VM alive when held (default: 4)
 # ========================================
 
 # Global timestamp set when script starts
@@ -72,6 +73,36 @@ vm_export_metadata() {
 #   keep-alive           — VM stays running for VM_DEBUG_TTL hours
 # Usage: vm_setup_cleanup_trap
 vm_setup_cleanup_trap() {
+  # Hold the VM in a reusable debug state for VM_DEBUG_TTL hours.
+  # Shared by the success (VM_ON_COMPLETE=keep-alive) and failure
+  # (VM_ON_FAILURE=keep-alive) paths. The VM stays RUNNING so an agent can
+  # re-mount code and re-run docker on the same VM without a reboot/rebuild.
+  _vm_keep_alive() {
+    local reason="$1"          # human-readable why we're holding
+    local debug_ttl="${VM_DEBUG_TTL:-4}"
+    echo "==========================================="
+    echo "  ${reason} — VM stays RUNNING for ${debug_ttl}h (debug mode)"
+    echo ""
+    echo "  Re-run in-container on THIS VM (no reboot, no rebuild):"
+    echo "    bash cloudbuild-builds/builders/agent_vm_rerun.sh   # from the repo"
+    echo ""
+    echo "  SSH into this VM:"
+    echo "    gcloud compute ssh ${VM_NAME:-unknown} --zone=${VM_ZONE:-unknown} --tunnel-through-iap"
+    echo "  Debug: docker ps -a | docker logs \$(docker ps -aq -n1) | df -h"
+    echo ""
+    echo "  Auto-shutdown in ${debug_ttl} hours. Manual: sudo shutdown -h now"
+    echo "==========================================="
+
+    # Kill the idle watchdog so it doesn't shut the VM down under us
+    if [ -n "${WATCHDOG_PID:-}" ]; then
+      kill "$WATCHDOG_PID" 2>/dev/null || true
+    fi
+    # Schedule a safety-net delayed shutdown, then hold the script open so the
+    # EXIT trap doesn't re-fire.
+    sudo shutdown -h +"$((debug_ttl * 60))" "VM debug TTL expired (${debug_ttl}h)" &
+    sleep infinity
+  }
+
   _vm_cleanup() {
     local exit_code=$?
     local VM_END_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -81,48 +112,24 @@ vm_setup_cleanup_trap() {
     echo "End Time  : ${VM_END_TIME}"
     echo "=========================================="
 
-    # Success — always shutdown
+    # Success path
     if [ "$exit_code" -eq 0 ]; then
+      if [ "${VM_ON_COMPLETE:-shutdown}" = "keep-alive" ]; then
+        _vm_keep_alive "Pipeline completed successfully (VM_ON_COMPLETE=keep-alive)"
+        return
+      fi
       echo "Pipeline completed successfully — shutting down VM"
       sudo shutdown -h now
       return
     fi
 
     # Failure path
-    local on_failure="${VM_ON_FAILURE:-shutdown}"
-    local debug_ttl="${VM_DEBUG_TTL:-4}"
-
     echo "==========================================="
     echo "  PIPELINE FAILED (exit code: $exit_code)"
     echo "==========================================="
 
-    if [ "$on_failure" = "keep-alive" ]; then
-      echo ""
-      echo "  VM_ON_FAILURE=keep-alive — VM will stay running for ${debug_ttl}h"
-      echo ""
-      echo "  SSH into this VM:"
-      echo "    gcloud compute ssh ${VM_NAME:-unknown} --zone=${VM_ZONE:-unknown} --tunnel-through-iap"
-      echo ""
-      echo "  Useful debug commands:"
-      echo "    docker ps -a                    # Check container status"
-      echo "    docker logs \$(docker ps -aq -n1) # Last container logs"
-      echo "    ls -la /tmp/                    # Check output files"
-      echo "    df -h                           # Check disk space"
-      echo ""
-      echo "  Auto-shutdown in ${debug_ttl} hours."
-      echo "  Manual shutdown: sudo shutdown -h now"
-      echo "==========================================="
-
-      # Kill the idle watchdog so it doesn't shut down the VM
-      if [ -n "${WATCHDOG_PID:-}" ]; then
-        kill "$WATCHDOG_PID" 2>/dev/null || true
-      fi
-
-      # Schedule delayed shutdown
-      sudo shutdown -h +"$((debug_ttl * 60))" "VM debug TTL expired (${debug_ttl}h)" &
-
-      # Keep the script alive so the trap doesn't re-fire
-      sleep infinity
+    if [ "${VM_ON_FAILURE:-shutdown}" = "keep-alive" ]; then
+      _vm_keep_alive "PIPELINE FAILED (VM_ON_FAILURE=keep-alive)"
     else
       echo "  VM_ON_FAILURE=shutdown — shutting down now"
       sudo shutdown -h now
@@ -141,7 +148,14 @@ vm_setup_cleanup_trap() {
 # Usage: vm_resolve_egress_bypass
 vm_resolve_egress_bypass() {
   export ALLOW_CROSS_REGION_EGRESS="${ALLOW_CROSS_REGION_EGRESS:-__ALLOW_CROSS_REGION_EGRESS__}"
-  [[ "$ALLOW_CROSS_REGION_EGRESS" == "__ALLOW_CROSS_REGION_EGRESS__" ]] && ALLOW_CROSS_REGION_EGRESS="false"
+  # If the placeholder was left unreplaced (or the value isn't a boolean), default to
+  # guard-enforced. Do NOT compare against the literal "__ALLOW_CROSS_REGION_EGRESS__" token:
+  # the vm_config sed rewrites EVERY such token in this file — including one inside a
+  # comparison — which silently inverts the logic (true→false). Match booleans instead.
+  case "$(printf '%s' "$ALLOW_CROSS_REGION_EGRESS" | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on|false|0|no|off) ;;
+    *) ALLOW_CROSS_REGION_EGRESS="false" ;;
+  esac
   export ALLOW_CROSS_REGION_EGRESS
 }
 
@@ -335,6 +349,8 @@ run_contract_cli_path() {
 write_run_contract() {
   local CONTRACT_FILE="$1"
   local OUTPUT_GCS="$2"
+  # NOTE: do NOT write ${3:-{}} — bash ends the :- default at the FIRST '}', so a set $3
+  # gets a literal '}' appended (corrupts the JSON: "Extra data" on parse). Assign then default.
   local CONFIG_JSON="${3:-}"
   [ -z "${CONFIG_JSON}" ] && CONFIG_JSON="{}"
   local INPUTS_JSON="${4:-}"
@@ -590,8 +606,10 @@ vm_standard_init() {
 
   # Resolve VM debug mode placeholders (fall back to defaults if not set via vm_config)
   export VM_ON_FAILURE="${VM_ON_FAILURE:-__VM_ON_FAILURE__}"
+  export VM_ON_COMPLETE="${VM_ON_COMPLETE:-__VM_ON_COMPLETE__}"
   export VM_DEBUG_TTL="${VM_DEBUG_TTL:-__VM_DEBUG_TTL__}"
   [[ "$VM_ON_FAILURE" == "__VM_ON_FAILURE__" ]] && VM_ON_FAILURE="shutdown"
+  [[ "$VM_ON_COMPLETE" == "__VM_ON_COMPLETE__" ]] && VM_ON_COMPLETE="shutdown"
   [[ "$VM_DEBUG_TTL" == "__VM_DEBUG_TTL__" ]] && VM_DEBUG_TTL="4"
 
   # Resolve the cross-region egress bypass flag (default: guard enforced).

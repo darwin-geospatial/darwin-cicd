@@ -283,17 +283,40 @@ for IDX in $(seq 1 "$VM_COUNT"); do
       )
     fi
 
-    if "${CREATE_CMD[@]}" 2>&1; then
-      VM_CREATED=true
-      ACTUAL_ZONE="$ZONE"
+    # Retry the create IN-PLACE on TRANSIENT control-plane errors (Internal error /
+    # service unavailable). A reserved GPU guarantees capacity, so these are backend
+    # hiccups that clear on retry — keep hammering so ONE build lands the VM (no resubmit).
+    # Every failed attempt is recorded to GCS for evidence (e.g. a Google support case).
+    CREATE_MAX_ATTEMPTS="${CREATE_MAX_ATTEMPTS:-40}"
+    FAILURE_DIR="gs://${_BUCKET:-${CB_BUCKET:-}}/Laboratory/Utils/vm_create_failures"
+    ATTEMPT=0
+    while (( ATTEMPT < CREATE_MAX_ATTEMPTS )); do
+      ATTEMPT=$((ATTEMPT + 1))
+      CREATE_OUT="$("${CREATE_CMD[@]}" 2>&1)" && CREATE_RC=0 || CREATE_RC=$?
+      echo "$CREATE_OUT"
+      if [[ "$CREATE_RC" -eq 0 ]]; then
+        VM_CREATED=true; ACTUAL_ZONE="$ZONE"; break
+      fi
+      # Record the failure (fail-safe: never aborts the loop)
+      _TS=$(date -u +"%Y%m%dT%H%M%SZ")
+      _ERR=$(printf '%s' "$CREATE_OUT" | grep -iE "error|unavailable|exhaust|quota|denied" | head -1)
+      printf 'ts=%s\nvm=%s\nzone=%s\nattempt=%s\nbuild=%s\nrc=%s\nerror=%s\n' \
+        "$_TS" "$VM_NAME" "$ZONE" "$ATTEMPT" "${BUILD_ID:-local}" "$CREATE_RC" "$_ERR" \
+        | gsutil -q cp - "${FAILURE_DIR}/${VM_NAME}_a${ATTEMPT}_${_TS}.txt" 2>/dev/null || true
+      if printf '%s' "$CREATE_OUT" | grep -qiE "Internal error|currently unavailable|try again|resource pool.*exhaust|not have enough resources|Service Unavailable"; then
+        echo "⏳ Transient create error (attempt ${ATTEMPT}/${CREATE_MAX_ATTEMPTS}) in ${ZONE} — retrying in 15s..."
+        sleep 15
+        continue
+      fi
+      echo "Non-transient create error in ${ZONE} — moving to next zone."
       break
-    else
-      echo "Zone $ZONE unavailable, trying next..."
-    fi
+    done
+    [[ "$VM_CREATED" == "true" ]] && break
+    echo "Zone $ZONE exhausted, trying next..."
   done
 
   if [[ "$VM_CREATED" != "true" ]]; then
-    echo "ERROR: Could not create VM $VM_NAME in any configured zone" >&2
+    echo "ERROR: Could not create VM $VM_NAME after ${CREATE_MAX_ATTEMPTS} attempts per zone" >&2
     exit 1
   fi
 
