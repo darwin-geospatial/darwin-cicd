@@ -206,8 +206,17 @@ vm_assert_region_bucket_match() {
 vm_install_docker() {
   echo ""
   echo "Installing Docker..."
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq docker.io
+  # unattended-upgrades runs at first boot and holds the dpkg lock; apt-get then exits 100 at once and set -e kills
+  # the VM (3 of 7 scene-chip VMs, build 82dc3a33, 2026-10-06). Wait for it, then let apt wait on the lock too.
+  # (Wait on the lock files, not the process name: the unattended-upgrade-shutdown helper runs for the whole uptime.)
+  for _ in $(seq 1 120); do
+    sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1 || break; sleep 5
+  done
+  for attempt in 1 2 3; do
+    sudo apt-get -o DPkg::Lock::Timeout=600 update -qq && break
+    [ "$attempt" = 3 ] && return 1; sleep 30
+  done
+  sudo apt-get -o DPkg::Lock::Timeout=600 install -y -qq docker.io
   sudo systemctl enable --now docker
   export PATH="/usr/bin:/usr/local/bin:$PATH"
   echo "Docker installed and enabled"
