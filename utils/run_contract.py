@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import functools
 import glob
 import hashlib
 import json
@@ -23,6 +24,16 @@ from string import Template
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Tuple
 
 SCHEMA_VERSION = 1
+
+# Per-call cap on gsutil existence checks so finalize/preflight can never hang the VM.
+# On timeout the asset is reported as unknown (exists=None, reason "gsutil_timeout").
+GSUTIL_TIMEOUT_SEC = float(os.getenv("RUN_CONTRACT_GSUTIL_TIMEOUT_SEC", "300"))
+
+# Exact-object existence results prefetched per GCS folder (see _prefetch_gcs_uri_existence).
+# Maps normalized gs:// URI -> (exists, reason). Consulted by _gsutil_exists before it shells out.
+_GCS_EXISTS_CACHE: Dict[str, Tuple[bool | None, str]] = {}
+
+_GLOB_CHARS = ("*", "?", "[", "]")
 
 
 def _utc_now_iso() -> str:
@@ -49,7 +60,9 @@ def _load_json_file(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@functools.lru_cache(maxsize=None)
 def _command_exists(cmd: str) -> bool:
+    # Cached: probed once per process instead of once per asset.
     return subprocess.run(["bash", "-lc", f"command -v {cmd}"], capture_output=True).returncode == 0
 
 
@@ -541,13 +554,90 @@ def _gsutil_ls(pattern: str) -> Tuple[List[str] | None, str]:
 
 
 def _gsutil_exists(uri: str) -> Tuple[bool | None, str]:
+    cached = _GCS_EXISTS_CACHE.get(uri)
+    if cached is not None:
+        return cached
+
     if not _command_exists("gsutil"):
         return (None, "gsutil_unavailable")
 
-    proc = subprocess.run(["gsutil", "-q", "stat", uri], capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            ["gsutil", "-q", "stat", uri], capture_output=True, text=True, timeout=GSUTIL_TIMEOUT_SEC
+        )
+    except subprocess.TimeoutExpired:
+        return (None, "gsutil_timeout")
     if proc.returncode == 0:
         return (True, "gcs_uri")
     return (False, "gcs_uri")
+
+
+def _gsutil_list_folder(folder: str) -> Tuple[set[str] | None, str]:
+    """List the objects directly under one GCS folder with a single `gsutil ls`.
+
+    Returns (object_uris, "ok"), (None, "gsutil_timeout"), or (None, "failed") when the
+    listing errored for any reason other than an empty prefix (caller then falls back).
+    """
+    try:
+        proc = subprocess.run(
+            ["gsutil", "ls", folder.rstrip("/") + "/"],
+            capture_output=True,
+            text=True,
+            timeout=GSUTIL_TIMEOUT_SEC,
+        )
+    except subprocess.TimeoutExpired:
+        return (None, "gsutil_timeout")
+    if proc.returncode != 0:
+        if "matched no objects" in (proc.stderr or "").lower():
+            return (set(), "ok")
+        return (None, "failed")
+    found: set[str] = set()
+    for line in (proc.stdout or "").splitlines():
+        item = line.strip()
+        if item.startswith("gs://") and not item.endswith("/"):
+            found.add(item)
+    return (found, "ok")
+
+
+def _prefetch_gcs_uri_existence(assets: Iterable[Mapping[str, Any]]) -> None:
+    """Verify every exact gs:// `uri` asset with one listing per folder instead of one stat each.
+
+    Only assets that _asset_exists would check via `uri` are considered (no local_path).
+    Folders holding a single asset keep the plain stat (same call count, no big listing).
+    If a listing fails for any reason other than an empty prefix, that folder's assets are
+    left uncached so _gsutil_exists falls back to the original per-asset stat: the verification
+    result is identical to the old per-asset behaviour.
+    """
+    _GCS_EXISTS_CACHE.clear()
+    by_folder: Dict[str, set[str]] = {}
+    for asset in assets:
+        if asset.get("local_path"):
+            continue
+        uri = asset.get("uri")
+        if not uri or not str(uri).startswith("gs://"):
+            continue
+        normalized = _normalize_gs_uri(str(uri))
+        if any(ch in normalized for ch in _GLOB_CHARS):
+            continue  # stat expands wildcards; keep the exact old behaviour for these
+        idx = normalized.rfind("/")
+        if idx <= len("gs://"):
+            continue  # bare bucket, no object name
+        by_folder.setdefault(normalized[:idx], set()).add(normalized)
+
+    if not by_folder or not _command_exists("gsutil"):
+        return
+
+    for folder, uris in sorted(by_folder.items()):
+        if len(uris) < 2:
+            continue
+        listed, status = _gsutil_list_folder(folder)
+        if listed is None:
+            if status == "gsutil_timeout":
+                for uri in uris:
+                    _GCS_EXISTS_CACHE[uri] = (None, "gsutil_timeout")
+            continue
+        for uri in uris:
+            _GCS_EXISTS_CACHE[uri] = (uri in listed, "gcs_uri")
 
 
 def _asset_exists(asset: Mapping[str, Any]) -> Tuple[bool | None, str, List[str]]:
@@ -969,6 +1059,7 @@ def _cmd_preflight(args: argparse.Namespace) -> int:
     missing_optional: List[str] = []
     ok_count = 0
 
+    _prefetch_gcs_uri_existence(input_assets)
     for asset in input_assets:
         exists, exists_reason, matched = _asset_exists(asset)
         asset["exists"] = exists
@@ -1063,6 +1154,7 @@ def _cmd_finalize(args: argparse.Namespace) -> int:
     corrupt_required: List[str] = []
     unknown_required: List[str] = []
 
+    _prefetch_gcs_uri_existence(assets)
     for asset in assets:
         exists, exists_reason, matched = _asset_exists(asset)
         asset["exists"] = exists
