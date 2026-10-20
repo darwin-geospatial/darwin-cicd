@@ -8,6 +8,11 @@
             "type": "command",
             "command": "bash .claude/all/darwin-tick.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash .claude/all/darwin-brain.sh",
+            "timeout": 8
           }
         ]
       }
@@ -20,6 +25,18 @@
             "type": "command",
             "command": "bash .claude/all/darwin-guard.sh",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/all/darwin-report.sh",
+            "timeout": 10
           }
         ]
       }

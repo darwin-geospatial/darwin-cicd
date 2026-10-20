@@ -2,7 +2,8 @@
 # Darwin checks, counted locally (UserPromptSubmit hook). Single source:
 # admin-darwin-agents/templates/context/claude-all/ (copied to every repo's .claude/all/; never edit a copy).
 # Stable on purpose: which checks exist, how often and where comes from the center as data
-# (GET /api/v1/ticks?repo=<id>), cached once a day in ~/.cache/darwin/. No network on most messages.
+# (GET /api/v1/ticks?repo=<id>), cached once a day in ~/.cache/darwin/. No network on most messages. A row fires every
+# N messages (`every`), by chance (`chance`) or when the prompt matches its `trigger` regex.
 set -euo pipefail
 INPUT="$(cat)"
 exec python3 - "$INPUT" <<'PY'
@@ -53,6 +54,13 @@ for r in rows:
         if fam not in best or int(r["every"]) > int(best[fam]["every"]):
             best[fam] = r
 due = list(best.values()) + [r for r in rows if r.get("chance") and random.random() < float(r["chance"])]
+prompt = str(event.get("prompt") or "")
+for r in rows:  # `trigger` rows: the prompt's own words call the check (e.g. a report, plan or summary calls Robin)
+    try:
+        if r.get("trigger") and r not in due and re.search(r["trigger"], prompt, re.I):
+            due.append(r)
+    except re.error:
+        pass
 
 stops_file = cache / "stops" / f"{repo}.json"
 stops = json.loads(stops_file.read_text()) if stops_file.exists() else {}
